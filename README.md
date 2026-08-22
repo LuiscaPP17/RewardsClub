@@ -1,120 +1,194 @@
-# RewardsClub
-
-A staking contract built with Solidity and Foundry that pays dual rewards — an ERC20 token and native ETH — and grants tiered membership status based on how much a user has staked.
-
 ## Overview
 
-`RewardsClub` lets users stake a variable amount of an ERC20 token and earn two kinds of rewards simultaneously over time: more of the staked token, and native ETH. Based on their staked balance, each user is automatically classified into a membership tier — Bronze, Silver, or Gold — calculated on demand rather than stored, so it can never fall out of sync with their actual stake.
+`RewardsClub` is a staking protocol that lets users stake a variable amount of an ERC20 token and earn two kinds of rewards simultaneously over time: more of the staked token, and native ETH. Based on their staked balance, each user is automatically classified into a membership tier — Bronze, Silver, or Gold — calculated on demand from their current stake rather than stored, so it can never fall out of sync with reality.
 
-The contract uses OpenZeppelin's `Ownable` and `Pausable` for access control and emergency stops, and follows the same "accrue-before-update" pattern used across this author's staking contracts to ensure no reward is ever lost when a user's stake changes.
+This system is well suited for protocols that want to reward long-term holders with more than just a single asset. A clear example: a DeFi protocol wants to share both token emissions and a portion of real protocol revenue (collected in ETH) with its stakers. A user who stakes 600 tokens immediately qualifies for Gold-tier status (the Gold threshold being 500 tokens), and from that point on accrues both token rewards and ETH rewards in parallel. They can claim either reward independently — for example, claiming only the ETH portion while letting their token rewards keep compounding — and can unstake at any time, even during an emergency pause.
 
-## Features
+The protocol also includes a credit-free, debt-free reward system: the owner funds two separate reserves (one in the staked token, one in native ETH) so that rewards can always be paid out without ever touching user principal.
 
-- **Dual-asset rewards**: staked tokens earn both more of the same token and native ETH, each accruing independently at its own configurable rate (scaled by `1e18` for fixed-point precision).
-- **Variable-amount staking**: no fixed deposit size and no single-deposit restriction — users can stake, top up, or partially withdraw freely.
-- **Tiered membership**: Bronze, Silver, and Gold tiers based on fixed staked-amount thresholds, calculated live via `getMemberTier()` rather than stored in state — this avoids any risk of the tier becoming stale after a stake changes.
-- **Independent reward claiming**: `claimRewards()` pays out whichever reward(s) the user actually has accrued — a user with only token rewards pending isn't blocked from claiming just because their ETH rewards happen to be zero.
-- **ETH funding via `receive()`**: the contract owner funds the ETH reward reserve by sending ETH directly to the contract address, which triggers Solidity's special `receive()` function.
-- **Pausable, but user-safe**: staking can be paused by the owner in an emergency, but unstaking and claiming rewards are never blocked — users can always exit or collect what they've earned.
+## How it works
 
-## Contract Functions
+The protocol is implemented in a single main contract:
 
-### `constructor(address tokenAddress_, uint256 tokenRewardRate_, uint256 etherRewardRate_, uint256 silverThreshold_, uint256 goldThreshold_)`
-Deploys the contract, setting the ERC20 token, both reward rates, and the two tier thresholds. The deployer becomes the contract owner.
+1. [RewardsClub](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol): This contract handles staking, dual-asset reward accrual, tiered membership calculation, and reward claiming. It inherits OpenZeppelin's `Ownable` for access control and `Pausable` for emergency stops.
 
-### `getMemberTier(address user_) → Tier`
-Read-only function that returns a user's current membership tier, computed from their staked amount against `goldThreshold` and `silverThreshold` at the moment of the call.
+Testing relies on three supporting mock contracts, used only to exercise behavior that a well-behaved token would never trigger:
 
-### `stake(uint256 amount_)`
-Stakes `amount_` tokens. Requires prior `approve()` on the token contract. Accrues any pending rewards before adding to the user's staked balance. Blocked while the contract is paused.
+2. [MockToken](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/mocks/MockToken.sol): A standard, well-behaved ERC20 mock used for all normal-path tests.
+3. [FailingToken](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/mocks/FailingToken.sol): An ERC20 mock whose transfer behavior can be toggled to fail on demand, used to force the `require(success, ...)` failure branches.
+4. [RejectingCaller](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/mocks/RejectingCaller.sol): A contract with no `receive()`/`fallback()`, used to force the native ETH transfer failure branch inside `claimRewards()`.
 
-### `unstake(uint256 amount_)`
-Withdraws `amount_` tokens from the caller's staked balance. Accrues any pending rewards before reducing the balance. Always available, even while paused.
+## Technical docs
 
-### `claimRewards()`
-Claims all accumulated token and ETH rewards for the caller. Each asset is checked and paid out independently — a zero balance in one asset doesn't prevent claiming the other. Always available, even while paused.
+RewardsClub exposes the following functions:
 
-### `fundTokenRewards(uint256 amount_)` — owner only
-Transfers `amount_` tokens from the owner into the contract's token reward reserve.
-
-### `receive()` — owner only
-Special Solidity function triggered when ETH is sent directly to the contract address (with no function call). Restricted to the owner, so only they can fund the ETH reward reserve.
-
-### `pause()` / `unpause()` — owner only
-Pauses or resumes `stake()`. Does not affect `unstake()` or `claimRewards()`.
-
-## Design Notes
-
-**Why calculate the tier instead of storing it?** Storing a tier field in the `Member` struct would require remembering to recalculate and update it every time `stake()` or `unstake()` changes a user's amount — miss one spot, and the stored tier silently drifts from reality. Calculating it on the fly in a `view` function removes that entire category of bug, at essentially no cost since tier lookups don't need to happen inside gas-metered state-changing operations.
-
-**Why can a user claim only one reward asset?** Early in development, `claimRewards()` required *both* token and ETH rewards to be greater than zero before paying out either — which meant a user with token rewards but zero ETH rewards (or vice versa) couldn't claim anything at all. The fix separates the check into two independent `if` blocks, each handling its own reset and transfer, so a user always gets whatever they're owed.
-
-**Why is `receive()` restricted to the owner?** ETH sent to the contract funds the ETH reward pool paid out to stakers. Leaving it open to anyone could mean unintended ETH transfers get treated as reward funding, or that accidental sends become impossible to distinguish from deliberate ones. Restricting it to the owner keeps reward funding a deliberate, auditable action — consistent with how token rewards are funded via the explicit `fundTokenRewards()`.
-
-**Why is `unstake`/`claimRewards` never paused?** Pausing is meant to stop *new* exposure (further staking) during an emergency, not to lock in funds or rewards users have already earned. A pause that blocks withdrawals or claims would let the owner freeze user funds at will, which is a red flag in any staking contract.
-
-**Fixed-point math**: Since Solidity has no decimal type, both `tokenRewardRate` and `etherRewardRate` are expressed as values scaled by `1e18`. Reward calculations always multiply before dividing to avoid precision loss:
+1. Stake tokens: for staking ERC20 tokens the `stake` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L99-L111)
 
 ```solidity
-tokenReward = (amount * tokenRewardRate * elapsedPeriod) / 1e18;
-etherReward = (amount * etherRewardRate * elapsedPeriod) / 1e18;
+/** 
+* @notice Stakes tokens from the contract to start earning dual rewards
+* @param amount_ The amount of tokens to stake
+*/
+function stake(uint256 amount_) external whenNotPaused {
+    require(amount_ > 0, "The amount must be greater than 0");
+
+    _updateRewards(msg.sender);
+
+    bool success = token.transferFrom(msg.sender, address(this), amount_);
+    require(success, "Transfer failed");
+
+    members[msg.sender].amount += amount_;
+
+    emit Stake(msg.sender, amount_);
+}
 ```
 
-**Accrue-before-update pattern**: Every function that changes a user's staked amount (`stake`, `unstake`) or claims rewards first calls the internal `_updateRewards()`, which accrues both token and ETH rewards based on time elapsed *before* the stake or timestamp changes, so no accrual period is ever silently lost.
+2. Unstake tokens: for withdrawing staked tokens the `unstake` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L116-L128)
 
-## Project Structure
+```solidity
+/** 
+* @notice Unstake tokens from the contract and returns them to the user
+* @param amount_ The amount of tokens to unstake
+*/
+function unstake(uint256 amount_) external {
+    require(members[msg.sender].amount >= amount_, "Insufficient staked amount");
 
-```
-src/
-  RewardsClub.sol         # Main contract
-test/
-  RewardsClub.t.sol       # Foundry test suite
-  mocks/
-    MockToken.sol         # Simple ERC20 mock used for testing
-```
+    _updateRewards(msg.sender);
 
-## Getting Started
+    members[msg.sender].amount -= amount_;
 
-### Prerequisites
+    bool success = token.transfer(msg.sender, amount_);
+    require(success, "Transfer failed");
 
-- [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- OpenZeppelin Contracts (installed as a Foundry dependency)
-
-### Install dependencies
-
-```bash
-forge install
+    emit Unstake(msg.sender, amount_);
+}
 ```
 
-### Build
+3. Claim rewards: for claiming accrued token and ETH rewards the `claimRewards` function must be called. Each asset is checked and paid out independently. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L132-L154)
 
-```bash
-forge build
+```solidity
+/** 
+* @notice Claim token and ether rewards from the contract to the user
+*/
+function claimRewards() external {
+    _updateRewards(msg.sender);
+
+    uint256 tokenRewards = members[msg.sender].unclaimedRewardsToken;
+    uint256 etherRewards = members[msg.sender].unclaimedRewardsEther;
+
+    require(tokenRewards > 0 || etherRewards > 0, "No rewards to claim");
+
+    if (tokenRewards > 0) {
+        members[msg.sender].unclaimedRewardsToken = 0;
+        bool tokenSuccess = token.transfer(msg.sender, tokenRewards);
+        require(tokenSuccess, "Token transfer failed");
+    }
+
+    if (etherRewards > 0) {
+        members[msg.sender].unclaimedRewardsEther = 0;
+        (bool etherSuccess, ) = msg.sender.call{value: etherRewards}("");
+        require(etherSuccess, "Ether transfer failed");
+    }
+
+    emit ClaimRewards(msg.sender, tokenRewards, etherRewards);
+}
 ```
 
-### Run tests
+4. Check membership tier: for checking a user's current membership tier the `getMemberTier` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L59-L70)
 
-```bash
+```solidity
+/**
+ * @notice Returns a user's current membership tier based on their staked amount
+ */
+function getMemberTier(address user_) external view returns (Tier) {
+    uint256 amount_ = members[user_].amount;
+
+    if(amount_ >= goldThreshold) {
+        return Tier.Gold;
+    } else if(amount_ >= silverThreshold) {
+        return Tier.Silver;
+    } else {
+        return Tier.Bronze;
+    }
+}
+```
+
+5. Fund token rewards (owner only): for funding the token reward reserve the `fundTokenRewards` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L90-L94)
+
+```solidity
+/**
+ * @notice Funds the contract with tokens to pay out token rewards. Only callable by the contract owner
+ */
+function fundTokenRewards(uint256 amount_) external onlyOwner {
+    bool success = token.transferFrom(msg.sender, address(this), amount_);
+    require(success, "Transfer failed");
+}
+```
+
+6. Fund ETH rewards (owner only): the ETH reward reserve is funded by sending ETH directly to the contract address, which triggers Solidity's special `receive()` function. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L158-L161)
+
+```solidity
+/**
+ * @notice Allows the contract owner to fund the contract with ETH to pay out ETH rewards
+ */
+receive() external payable onlyOwner {
+    emit EtherSent(msg.value);
+}
+```
+
+7. Pause / unpause (owner only): for pausing or resuming `stake()` in case of an emergency, the `pause` and `unpause` functions must be called. Neither `unstake()` nor `claimRewards()` are ever affected. [Check pause](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L165-L168) | [Check unpause](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L172-L175)
+
+```solidity
+function pause() external onlyOwner {
+    _pause();
+}
+
+function unpause() external onlyOwner {
+    _unpause();
+}
+```
+
+## Usage Example
+
+Imagine a DeFi protocol that wants to reward long-term token holders with both more of its native token and a share of protocol revenue in ETH. A user holding 600 tokens deposits them into RewardsClub, immediately qualifying for Gold-tier membership (the threshold is 500 tokens). Over time, their stake earns both token rewards (compounding their holdings) and ETH rewards (a share of real yield), which they can claim independently — for example, claiming just the ETH portion while leaving the token rewards to keep compounding. If they later need liquidity, they can unstake at any time, even if the contract is paused for an unrelated emergency.
+
+*(This section will be updated with a live deployment walkthrough and real transaction links once the contract is deployed to a public testnet.)*
+
+## Contract addresses
+
+*(Pending — will be added once RewardsClub is deployed to a public testnet, with links to Arbiscan.)*
+
+## Tech
+
+RewardsClub is built using the following tools and libraries:
+
+* [Foundry](https://book.getfoundry.sh/) - development, testing, and deployment framework
+* [OpenZeppelin Contracts](https://www.openzeppelin.com/) - `Ownable` and `Pausable` base contracts
+* [Solidity](https://soliditylang.org/) - smart contract language (v0.8.24)
+
+## Testing
+
+All functions in the protocol have tests implemented. To execute these tests:
+
+```
 forge test
 ```
 
-### Check test coverage
+The main contract has 100% branch coverage, you can check it by executing:
 
-```bash
+```
 forge coverage
 ```
 
-## Test Coverage
+```
+| src/RewardsClub.sol            | 100.00% (58/58) | 100.00% (56/56) | 100.00% (22/22) | 100.00% (10/10) |
+| test/mocks/FailingToken.sol    | 42.86% (6/14)   | 55.56% (5/9)    | 100.00% (0/0)   | 42.86% (3/7)    |
+| test/mocks/MockToken.sol       | 100.00% (2/2)   | 100.00% (1/1)   | 100.00% (0/0)   | 100.00% (1/1)   |
+| test/mocks/RejectingCaller.sol | 100.00% (8/8)   | 100.00% (4/4)   | 100.00% (0/0)   | 100.00% (4/4)   |
+| Total                          | 90.24% (74/82)  | 94.29% (66/70)  | 100.00% (22/22) | 81.82% (18/22)  |
+```
 
-The test suite (20 tests) covers:
-
-- **Staking**: successful stakes, zero-amount rejection, accumulation across multiple deposits, event emission, and rejection while paused.
-- **Membership tiers**: default Bronze status with no stake, and exact-boundary checks confirming a user reaches Silver and Gold status the instant their stake meets each threshold.
-- **Unstaking**: successful withdrawals, full withdrawal, insufficient balance rejection, and event emission.
-- **Claiming rewards**: successful dual-asset claims (verified against both the internal accrual state and the actual token/ETH balances received), rejection with nothing to claim, and event emission.
-- **Access control**: `receive()`, `fundTokenRewards()`, `pause()`, and `unpause()` are all verified as owner-only, and `unpause()`'s successful path is explicitly confirmed.
-
-Line, statement, and function coverage reach 100%. Branch coverage falls short only on the false path of `require(success, ...)` in each token-moving function (`fundTokenRewards`, `stake`, `unstake`, and both transfers inside `claimRewards`) — unreachable with a well-behaved ERC20 mock and would require a deliberately malicious token to trigger.
+The main contract, `RewardsClub.sol`, reaches 100% coverage across every metric, including branches — notably, the false path of every `require(success, ...)` check, achieved using `FailingToken` (a mock whose transfer behavior can be toggled to fail) and `RejectingCaller` (a contract that always rejects incoming ETH). The partial coverage on `FailingToken.sol` reflects unused interface functions that exist only to satisfy `IERC20` and are never exercised directly — normal for test infrastructure rather than production code.
 
 ## License
 
