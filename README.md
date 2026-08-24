@@ -11,18 +11,19 @@ The protocol also includes a credit-free, debt-free reward system: the owner fun
 The protocol is implemented in a single main contract:
 
 1. [RewardsClub](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol): This contract handles staking, dual-asset reward accrual, tiered membership calculation, and reward claiming. It inherits OpenZeppelin's `Ownable` for access control and `Pausable` for emergency stops.
+2. [RewardsClub.t.sol](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/RewardsClub.t.sol): The Foundry test suite covering all contract functionality, including access control, event emission, and full branch coverage.
 
 Testing relies on three supporting mock contracts, used only to exercise behavior that a well-behaved token would never trigger:
 
-2. [MockToken](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/mocks/MockToken.sol): A standard, well-behaved ERC20 mock used for all normal-path tests.
-3. [FailingToken](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/mocks/FailingToken.sol): An ERC20 mock whose transfer behavior can be toggled to fail on demand, used to force the `require(success, ...)` failure branches.
-4. [RejectingCaller](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/mocks/RejectingCaller.sol): A contract with no `receive()`/`fallback()`, used to force the native ETH transfer failure branch inside `claimRewards()`.
+3. [MockToken](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/Mocks/MockToken.sol): A standard, well-behaved ERC20 mock used for all normal-path tests.
+4. [FailingToken](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/Mocks/FailingToken.sol): An ERC20 mock whose transfer behavior can be toggled to fail on demand, used to force the `require(success, ...)` failure branches.
+5. [RejectingCaller](https://github.com/LuiscaPP17/RewardsClub/blob/main/test/Mocks/RejectingCaller.sol): A contract with no `receive()`/`fallback()`, used to force the native ETH transfer failure branch inside `claimRewards()`.
 
 ## Technical docs
 
 RewardsClub exposes the following functions:
 
-1. Stake tokens: for staking ERC20 tokens the `stake` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L99-L111)
+1. Stake tokens: for staking ERC20 tokens the `stake` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L99-L110)
 
 ```solidity
 /** 
@@ -43,7 +44,7 @@ function stake(uint256 amount_) external whenNotPaused {
 }
 ```
 
-2. Unstake tokens: for withdrawing staked tokens the `unstake` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L116-L128)
+2. Unstake tokens: for withdrawing staked tokens the `unstake` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L116-L127)
 
 ```solidity
 /** 
@@ -64,7 +65,7 @@ function unstake(uint256 amount_) external {
 }
 ```
 
-3. Claim rewards: for claiming accrued token and ETH rewards the `claimRewards` function must be called. Each asset is checked and paid out independently. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L132-L154)
+3. Claim rewards: for claiming accrued token and ETH rewards the `claimRewards` function must be called. Each asset is checked and paid out independently. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L132-L153)
 
 ```solidity
 /** 
@@ -94,7 +95,7 @@ function claimRewards() external {
 }
 ```
 
-4. Check membership tier: for checking a user's current membership tier the `getMemberTier` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L59-L70)
+4. Check membership tier: for checking a user's current membership tier the `getMemberTier` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L59-L69)
 
 ```solidity
 /**
@@ -113,7 +114,7 @@ function getMemberTier(address user_) external view returns (Tier) {
 }
 ```
 
-5. Fund token rewards (owner only): for funding the token reward reserve the `fundTokenRewards` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L90-L94)
+5. Fund token rewards (owner only): for funding the token reward reserve the `fundTokenRewards` function must be called. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L90-L93)
 
 ```solidity
 /**
@@ -125,7 +126,7 @@ function fundTokenRewards(uint256 amount_) external onlyOwner {
 }
 ```
 
-6. Fund ETH rewards (owner only): the ETH reward reserve is funded by sending ETH directly to the contract address, which triggers Solidity's special `receive()` function. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L158-L161)
+6. Fund ETH rewards (owner only): the ETH reward reserve is funded by sending ETH directly to the contract address, which triggers Solidity's special `receive()` function. [Check function](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L158-L160)
 
 ```solidity
 /**
@@ -136,7 +137,7 @@ receive() external payable onlyOwner {
 }
 ```
 
-7. Pause / unpause (owner only): for pausing or resuming `stake()` in case of an emergency, the `pause` and `unpause` functions must be called. Neither `unstake()` nor `claimRewards()` are ever affected. [Check pause](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L165-L168) | [Check unpause](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L172-L175)
+7. Pause / unpause (owner only): for pausing or resuming `stake()` in case of an emergency, the `pause` and `unpause` functions must be called. Neither `unstake()` nor `claimRewards()` are ever affected. [Check pause](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L165-L167) | [Check unpause](https://github.com/LuiscaPP17/RewardsClub/blob/main/src/RewardsClub.sol#L172-L174)
 
 ```solidity
 function pause() external onlyOwner {
@@ -182,9 +183,9 @@ forge coverage
 
 ```
 | src/RewardsClub.sol            | 100.00% (58/58) | 100.00% (56/56) | 100.00% (22/22) | 100.00% (10/10) |
-| test/mocks/FailingToken.sol    | 42.86% (6/14)   | 55.56% (5/9)    | 100.00% (0/0)   | 42.86% (3/7)    |
-| test/mocks/MockToken.sol       | 100.00% (2/2)   | 100.00% (1/1)   | 100.00% (0/0)   | 100.00% (1/1)   |
-| test/mocks/RejectingCaller.sol | 100.00% (8/8)   | 100.00% (4/4)   | 100.00% (0/0)   | 100.00% (4/4)   |
+| test/Mocks/FailingToken.sol    | 42.86% (6/14)   | 55.56% (5/9)    | 100.00% (0/0)   | 42.86% (3/7)    |
+| test/Mocks/MockToken.sol       | 100.00% (2/2)   | 100.00% (1/1)   | 100.00% (0/0)   | 100.00% (1/1)   |
+| test/Mocks/RejectingCaller.sol | 100.00% (8/8)   | 100.00% (4/4)   | 100.00% (0/0)   | 100.00% (4/4)   |
 | Total                          | 90.24% (74/82)  | 94.29% (66/70)  | 100.00% (22/22) | 81.82% (18/22)  |
 ```
 
