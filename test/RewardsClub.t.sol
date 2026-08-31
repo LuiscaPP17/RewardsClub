@@ -26,7 +26,7 @@ contract RewardsClubTest is Test {
         club.fundTokenRewards(500_000 ether);
 
         vm.deal(address(this), 1000 ether);
-        (bool fundingSuccess, ) = address(club).call{value: 1000 ether}("");
+        (bool fundingSuccess,) = address(club).call{value: 1000 ether}("");
         require(fundingSuccess, "Ether funding failed");
     }
 
@@ -38,7 +38,7 @@ contract RewardsClubTest is Test {
 
         vm.stopPrank();
 
-        (uint256 amount, , , ) = club.members(user);
+        (uint256 amount,,,) = club.members(user);
         assertEq(amount, 50 ether, "Deposit does not match");
     }
 
@@ -60,7 +60,7 @@ contract RewardsClubTest is Test {
 
         vm.stopPrank();
 
-        (uint256 amount, , , ) = club.members(user);
+        (uint256 amount,,,) = club.members(user);
         assertEq(amount, 50 ether, "Deposit does not match");
     }
 
@@ -90,7 +90,7 @@ contract RewardsClubTest is Test {
         vm.stopPrank();
     }
 
-    function testGetMemberTierBronzeByDefault() public view{
+    function testGetMemberTierBronzeByDefault() public view {
         assertEq(uint256(club.getMemberTier(user)), uint256(RewardsClub.Tier.Bronze), "Should default to bronze");
     }
 
@@ -126,7 +126,7 @@ contract RewardsClubTest is Test {
 
         vm.stopPrank();
 
-        (uint256 amount, , , ) = club.members(user);
+        (uint256 amount,,,) = club.members(user);
         assertEq(amount, 20 ether, "Balance should reflect the withdrawal");
     }
 
@@ -140,7 +140,7 @@ contract RewardsClubTest is Test {
 
         vm.stopPrank();
 
-        (uint256 amount, , , ) = club.members(user);
+        (uint256 amount,,,) = club.members(user);
         assertEq(amount, 0 ether, "Balance should reflect the withdrawal");
     }
 
@@ -182,7 +182,7 @@ contract RewardsClubTest is Test {
 
         vm.stopPrank();
 
-        (, , uint256 tokenRewards, uint256 etherRewards) = club.members(user);
+        (,, uint256 tokenRewards, uint256 etherRewards) = club.members(user);
         assertEq(tokenRewards, 0, "Token rewards should be zero after claiming");
         assertEq(etherRewards, 0, "Ether rewards should be zero after claiming");
 
@@ -220,7 +220,7 @@ contract RewardsClubTest is Test {
         vm.startPrank(stranger);
 
         vm.expectRevert();
-        (bool success, ) = address(club).call{value: 1 ether}("");
+        (bool success,) = address(club).call{value: 1 ether}("");
 
         vm.stopPrank();
     }
@@ -321,4 +321,4 @@ contract RewardsClubTest is Test {
         vm.expectRevert("Ether transfer failed");
         rejectingCaller.claimRewards();
     }
-} // forge test -vvvv --match-test
+}

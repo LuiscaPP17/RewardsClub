@@ -11,8 +11,11 @@ import "../lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
  * @notice A staking contract with dual rewards (token + ETH) and tiered membership levels based on staked amount
  */
 contract RewardsClub is Ownable, Pausable {
-
-    enum Tier {Bronze, Silver, Gold}
+    enum Tier {
+        Bronze,
+        Silver,
+        Gold
+    }
 
     /**
      * @notice Represents a user's staking position
@@ -44,7 +47,13 @@ contract RewardsClub is Ownable, Pausable {
     event ClaimRewards(address indexed user_, uint256 tokenAmount_, uint256 etherAmount_);
     event EtherSent(uint256 amount_);
 
-    constructor(address tokenAddress_, uint256 tokenRewardRate_, uint256 etherRewardRate_, uint256 silverThreshold_, uint256 goldThreshold_) Ownable(msg.sender) {
+    constructor(
+        address tokenAddress_,
+        uint256 tokenRewardRate_,
+        uint256 etherRewardRate_,
+        uint256 silverThreshold_,
+        uint256 goldThreshold_
+    ) Ownable(msg.sender) {
         token = IERC20(tokenAddress_);
         tokenRewardRate = tokenRewardRate_;
         etherRewardRate = etherRewardRate_;
@@ -59,9 +68,9 @@ contract RewardsClub is Ownable, Pausable {
     function getMemberTier(address user_) external view returns (Tier) {
         uint256 amount_ = members[user_].amount;
 
-        if(amount_ >= goldThreshold) {
+        if (amount_ >= goldThreshold) {
             return Tier.Gold;
-        } else if(amount_ >= silverThreshold) {
+        } else if (amount_ >= silverThreshold) {
             return Tier.Silver;
         } else {
             return Tier.Bronze;
@@ -84,19 +93,19 @@ contract RewardsClub is Ownable, Pausable {
         member.timestamp = block.timestamp;
     }
 
-    /** 
-    * @notice Funds the contract with tokens to pay out token rewards. Only callable by the contract owner
-    */
+    /**
+     * @notice Funds the contract with tokens to pay out token rewards. Only callable by the contract owner
+     */
     function fundTokenRewards(uint256 amount_) external onlyOwner {
         bool success = token.transferFrom(msg.sender, address(this), amount_);
         require(success, "Transfer failed");
     }
 
-    /** 
-    * @notice Stakes tokens from the contract to start earning dual rewards
-    * @param amount_ The amount of tokens to stake
-    */
-    function stake(uint256 amount_) external whenNotPaused{
+    /**
+     * @notice Stakes tokens from the contract to start earning dual rewards
+     * @param amount_ The amount of tokens to stake
+     */
+    function stake(uint256 amount_) external whenNotPaused {
         require(amount_ > 0, "The amount must be greater than 0");
 
         _updateRewards(msg.sender);
@@ -109,10 +118,10 @@ contract RewardsClub is Ownable, Pausable {
         emit Stake(msg.sender, amount_);
     }
 
-    /** 
-    * @notice Unstake tokens from the contract and returns them to the user
-    * @param amount_ The amount of tokens to unstake
-    */
+    /**
+     * @notice Unstake tokens from the contract and returns them to the user
+     * @param amount_ The amount of tokens to unstake
+     */
     function unstake(uint256 amount_) external {
         require(members[msg.sender].amount >= amount_, "Insufficient staked amount");
 
@@ -126,9 +135,9 @@ contract RewardsClub is Ownable, Pausable {
         emit Unstake(msg.sender, amount_);
     }
 
-    /** 
-    * @notice Claim token and ether rewards from the contract to the user
-    */
+    /**
+     * @notice Claim token and ether rewards from the contract to the user
+     */
     function claimRewards() external {
         _updateRewards(msg.sender);
 
@@ -145,7 +154,7 @@ contract RewardsClub is Ownable, Pausable {
 
         if (etherRewards > 0) {
             members[msg.sender].unclaimedRewardsEther = 0;
-            (bool etherSuccess, ) = msg.sender.call{value: etherRewards}("");
+            (bool etherSuccess,) = msg.sender.call{value: etherRewards}("");
             require(etherSuccess, "Ether transfer failed");
         }
 
@@ -153,22 +162,22 @@ contract RewardsClub is Ownable, Pausable {
     }
 
     /**
-    * @notice Allows the contract owner to fund the contract with ETH to pay out ETH rewards
-    */
-    receive() external payable onlyOwner{
+     * @notice Allows the contract owner to fund the contract with ETH to pay out ETH rewards
+     */
+    receive() external payable onlyOwner {
         emit EtherSent(msg.value);
     }
 
-    /** 
-    * @notice Pause the contract by the contract owner
-    */
+    /**
+     * @notice Pause the contract by the contract owner
+     */
     function pause() external onlyOwner {
         _pause();
     }
 
-    /** 
-    * @notice Unpause the contract by the contract owner
-    */
+    /**
+     * @notice Unpause the contract by the contract owner
+     */
     function unpause() external onlyOwner {
         _unpause();
     }
